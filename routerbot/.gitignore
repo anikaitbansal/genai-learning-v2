@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+.vscode/
+memory_store/
+data/
+faiss_index/
+knowledge_index*
+uploads/
+*.db
+*.log
+graphify-out
+.gemini/

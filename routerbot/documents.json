@@ -1,0 +1,7 @@
+[
+    {
+        "doc_id": "doc-1",
+        "title": "RAG Basics Notes",
+        "content": "RAG stands for Retrieval-Augmented Generation. It improves chatbot answers by retrieving relevant information from a knowledge source before generating a final response. The basic flow is: user asks a question, the system searches the knowledge base, retrieves the best chunks, adds them to the prompt, and then the model answers using that context. Chunking means splitting large documents into smaller pieces so retrieval becomes easier and more accurate. A beginner RAG system can work without embeddings or a vector database by using keyword-based retrieval over local files. If no relevant context is found, the system can fall back to normal generation."
+    }
+]
