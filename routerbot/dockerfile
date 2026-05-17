@@ -1,14 +1,18 @@
 # Use lightweight Python image
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 # Set working directory inside container
 WORKDIR /app
 
 # Copy requirements first (for caching)
 COPY requirements.txt .
+COPY requirements-docker.txt .
 
 # Install dependencies
-RUN pip install --no-cache-dir --default-timeout=600 -r requirements.txt
+RUN pip install --no-cache-dir --default-timeout=600 \
+    torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements-docker.txt
+
 # Copy entire project
 COPY . .
 

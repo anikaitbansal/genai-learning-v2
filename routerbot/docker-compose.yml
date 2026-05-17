@@ -1,18 +1,32 @@
-version: "3.9"
-
 services:
+  postgres:
+    image: postgres:17
+    container_name: aichatbot-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build: .
     container_name: genai-backend
-
+    restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8000:8000"
-
     volumes:
       - ./data:/app/data
       - ./memory_store:/app/memory_store
+    depends_on:
+      - postgres
 
-    environment:
-      GROQ_API_KEY: ${GROQ_API_KEY}
-
-    restart: unless-stopped
+volumes:
+  postgres_data:

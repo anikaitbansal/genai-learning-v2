@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.git
+.env
+node_modules
+data
+memory_store
+*.db
+.streamlit
+.vscode
