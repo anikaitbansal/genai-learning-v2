@@ -1,12 +1,27 @@
-import logging
 from datetime import datetime, timezone
-from app_database import get_connection
-
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import Session as SessionModel, SessionHistory
+import logging
 
 logger = logging.getLogger(__name__)
 
+
+def get_or_create_session_id(db: Session, session_key: str) -> int:
+    session = db.query(SessionModel).filter(SessionModel.session_key == session_key).first()
+
+    if session is None:
+        session = SessionModel(user_id=1, session_key=session_key)
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    return session.id
+
+
+
 class MemoryManager:
-    def __init__(self, session_id):
+    def __init__(self, session_id: str):
         self.session_id = session_id
 
 
@@ -15,140 +30,98 @@ class MemoryManager:
         return [
             {"role": "system", "content": "You are a helpful assistant."}
         ]
-
+    
 
 
     def load(self):
         default_history = self.default_history()
-
-        logger.info(
-            "memory_stage=load_start session_id=%s", 
-            self.session_id)
-
+        logger.info(f"memory_stage = load_start Session: {self.session_id}")
 
         try:
-            with get_connection() as connection:
-                cursor = connection.cursor()
-                cursor.execute("""
-                    SELECT role, content
-                    FROM session_history 
-                    WHERE session_id = ? 
-                    ORDER BY id ASC
-                """, (self.session_id,))
-                rows = cursor.fetchall()
+            db = SessionLocal()
+            try:
+                session_pk = get_or_create_session_id(db, self.session_id)
 
-            if not rows:
-                logger.info(
-                    "memory_stage=session_missing_using_default session_id=%s default_message_count=%s",
-                    self.session_id,
-                    len(default_history)
+                rows = (
+                    db.query(SessionHistory)
+                    .filter(SessionHistory.session_id == session_pk)
+                    .order_by(SessionHistory.id.asc())
+                    .all()
                 )
-                return default_history
-            
-            chat_history = []
-            for row in rows:
-                chat_history.append({
-                    "role": row["role"],
-                    "content": row["content"]
-                })
-            
-            logger.info(
-                "memory_stage=load_done session_id=%s message_count=%s",
-                self.session_id,
-                len(chat_history)
-            )
 
-            return chat_history
-        
+                if not rows:
+                    logger.info(f"memory_stage = session_missing_using_default Session: {self.session_id}")
+                    return default_history
+
+                chat_history = [{"role": row.role, "content": row.content} for row in rows]
+
+                logger.info(f"memory_stage = load_done Session: {self.session_id} message_count: {len(chat_history)}")
+                return chat_history
+
+            finally:
+                db.close()
+
         except Exception as error:
-            logger.warning(
-                "memory_stage=load_failed session_id=%s error=%s",
-                self.session_id,
-                str(error)
-            )
-
-            logger.warning(
-                "memory_stage=load_fallback_default session_id=%s default_message_count=%s",
-                self.session_id,
-                len(default_history)
-            )
-
+            logger.warning(f"memory_stage = load_failed Session: {self.session_id} error: {str(error)}")
             return default_history
-            
+        
 
 
     def save(self, chat_history):
-        logger.info(
-            "memory_stage=save_start session_id=%s message_count=%s",
-            self.session_id,
-            len(chat_history)
-        )
+        logger.info(f"memory_stage = save_start Session: {self.session_id} message_count: {len(chat_history)}")
 
-        with get_connection() as connection:
-            cursor = connection.cursor()
+        db = SessionLocal()
+        try:
+            session_pk = get_or_create_session_id(db, self.session_id)
 
-            cursor.execute("""
-                DELETE FROM session_history
-                WHERE session_id = ?
-            """, (self.session_id,))
+            db.query(SessionHistory).filter(SessionHistory.session_id == session_pk).delete()
 
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now(timezone.utc)
 
             for message in chat_history:
-                cursor.execute("""
-                    INSERT INTO session_history (session_id, role, content, created_at)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    self.session_id, 
-                    message["role"], 
-                    message["content"], 
-                    timestamp))
-                
-            connection.commit()
+                row = SessionHistory(
+                    session_id=session_pk,
+                    role=message["role"],
+                    content=message["content"],
+                    created_at=timestamp
+                )
+                db.add(row)
 
-        logger.info(
-            "memory_stage=save_done session_id=%s message_count=%s",
-            self.session_id,
-            len(chat_history)
-        )
+            db.commit()
+
+            logger.info(f"memory_stage = save_done Session: {self.session_id} message_count: {len(chat_history)}")
+
+        finally:
+            db.close()
 
 
 
     def clear(self):
         default_history = self.default_history()
+        logger.info(f"memory_stage = clear_start Session: {self.session_id}")
 
-        logger.info(
-            "memory_stage=clear_start session_id=%s",
-            self.session_id
-        )
+        db = SessionLocal()
+        try:
+            session_pk = get_or_create_session_id(db, self.session_id)
 
-        with get_connection() as connection:
-            cursor = connection.cursor()
+            db.query(SessionHistory).filter(SessionHistory.session_id == session_pk).delete()
 
-            cursor.execute("""
-                DELETE FROM session_history
-                WHERE session_id = ?
-            """, (self.session_id,))
-
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now(timezone.utc)
 
             for message in default_history:
-                cursor.execute("""
-                    INSERT INTO session_history (session_id, role, content, created_at)
-                    VALUES (?, ?, ?, ?)
-                """, (
-                    self.session_id,
-                    message["role"],
-                    message["content"],
-                    timestamp
-                ))
+                row = SessionHistory(
+                    session_id=session_pk,
+                    role=message["role"],
+                    content=message["content"],
+                    created_at=timestamp
+                )
+                db.add(row)
 
-            connection.commit()
+            db.commit()
 
-        logger.info(
-            "memory_stage=clear_done session_id=%s message_count=%s",
-            self.session_id,
-            len(default_history)
-        )
+            logger.info(f"memory_stage = clear_done Session: {self.session_id} message_count: {len(default_history)}")
+            return default_history
 
-        return default_history
+        finally:
+            db.close()
+    

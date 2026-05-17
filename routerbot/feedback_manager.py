@@ -1,9 +1,15 @@
-from app_database import get_connection
 from datetime import datetime, timezone
+from sqlalchemy import func
+from database import SessionLocal
+from models import Feedback
+from memory_manager import get_or_create_session_id
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class FeedbackManager:
-
-    def create_feedback_entry(self, session_id, request_id, rating, comments="None"):
+    def create_feedback_entry(self, session_id, request_id, rating, comments=None):
         return {
             "session_id": session_id,
             "request_id": request_id,
@@ -11,59 +17,53 @@ class FeedbackManager:
             "comments": comments,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+    
 
 
-      
     def save_feedback(self, feedback_entry):
-        with get_connection() as connection:
-            cursor = connection.cursor()
+        db = SessionLocal()
+        try:
+            session_pk = get_or_create_session_id(db, feedback_entry["session_id"])
 
-            cursor.execute("""
-                INSERT INTO feedback (session_id, request_id, rating, comments, timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                feedback_entry["session_id"],
-                feedback_entry["request_id"],
-                feedback_entry["rating"],
-                feedback_entry["comments"],
-                feedback_entry["timestamp"]
-            ))
+            row = Feedback(
+                user_id=1,
+                session_id=session_pk,
+                request_id=feedback_entry["request_id"],
+                rating=feedback_entry["rating"],
+                comments=feedback_entry.get("comments"),
+                timestamp=datetime.now(timezone.utc)
+            )
+            db.add(row)
+            db.commit()
+        finally:
+            db.close()
 
-            connection.commit()
-
-
+            
 
     def get_summary(self):
-        with get_connection() as connection:
-            cursor = connection.cursor()
-
-            cursor.execute("SELECT COUNT(*) FROM feedback")
-            total_feedback = cursor.fetchone()[0]
+        db = SessionLocal()
+        try:
+            total_feedback = db.query(func.count(Feedback.id)).scalar()
 
             if total_feedback == 0:
                 return {
                     "total_feedback": 0,
                     "average_rating": 0,
-                    "rating_counts": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+                    "ratings_count": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
                 }
 
-            cursor.execute("SELECT AVG(rating) FROM feedback")
-            average_rating = round(cursor.fetchone()[0], 2)
+            average_rating = round(db.query(func.avg(Feedback.rating)).scalar(), 2)
 
-            cursor.execute("""
-                SELECT rating, COUNT(*) 
-                FROM feedback 
-                GROUP BY rating
-            """)
-            rows = cursor.fetchall()
+            rows = db.query(Feedback.rating, func.count(Feedback.id)).group_by(Feedback.rating).all()
 
-            rating_counts = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
-
-            for row in rows:
-                rating_counts[str(row[0])] = row[1]
+            ratings_count = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+            for rating, count in rows:
+                ratings_count[str(rating)] = count
 
             return {
                 "total_feedback": total_feedback,
                 "average_rating": average_rating,
-                "rating_counts": rating_counts
+                "ratings_count": ratings_count
             }
+        finally:
+            db.close()
