@@ -11,7 +11,7 @@ COPY requirements-docker.txt .
 # Install dependencies
 RUN pip install --no-cache-dir --default-timeout=600 \
     torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir -r requirements-docker.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy entire project
 COPY . .

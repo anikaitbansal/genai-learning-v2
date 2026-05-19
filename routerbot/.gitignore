@@ -11,3 +11,4 @@ uploads/
 *.log
 graphify-out
 .gemini/
+repomix-output.xml
