@@ -14,6 +14,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    container_name: aichatbot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
   backend:
     build: .
     container_name: genai-backend
@@ -24,9 +33,10 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./memory_store:/app/memory_store
     depends_on:
       - postgres
+      - redis
 
 volumes:
   postgres_data:
+  redis_data:
