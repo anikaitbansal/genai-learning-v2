@@ -13,7 +13,9 @@ class ChatService:
         self.chat_log_repository = ChatLogRepository()
         self.graph = build_langgraph_flow()
 
-    def process_message(self, message, session_id, request_id, use_rag=True, debug=False):
+    def process_message(
+        self, message, session_id, request_id, user_id, use_rag=True, debug=False
+    ):
         cleaned_message = message.strip()
 
         if not cleaned_message:
@@ -25,13 +27,13 @@ class ChatService:
             session_id,
             len(cleaned_message),
             use_rag,
-            debug or self.debug
+            debug or self.debug,
         )
 
         logger.info(
             "[request_id=%s] flow=memory_load_start session_id=%s",
             request_id,
-            session_id
+            session_id,
         )
 
         chat_history = self.memory.load()
@@ -39,7 +41,7 @@ class ChatService:
             "[request_id=%s] flow=memory_load_done session_id=%s history_messages=%s",
             request_id,
             session_id,
-            len(chat_history)
+            len(chat_history),
         )
 
         logger.info(
@@ -57,7 +59,7 @@ class ChatService:
             "bot_reply": "",
             "evaluation": {},
             "evaluation_reason": "",
-            "retry_count": 0
+            "retry_count": 0,
         }
 
         final_state = self.graph.invoke(initial_state)
@@ -77,7 +79,7 @@ class ChatService:
         logger.info(
             "[request_id=%s] flow=memory_update_start session_id=%s",
             request_id,
-            session_id
+            session_id,
         )
 
         should_save_to_memory = True
@@ -93,13 +95,13 @@ class ChatService:
                 "[request_id=%s] flow=memory_update_done session_id=%s history_messages=%s",
                 request_id,
                 session_id,
-                len(chat_history)
+                len(chat_history),
             )
 
             logger.info(
                 "[request_id=%s] flow=memory_save_start session_id=%s",
                 request_id,
-                session_id
+                session_id,
             )
 
             self.memory.save(chat_history)
@@ -108,14 +110,14 @@ class ChatService:
                 "[request_id=%s] flow=memory_save_done session_id=%s history_messages=%s",
                 request_id,
                 session_id,
-                len(chat_history)
+                len(chat_history),
             )
 
         else:
             logger.info(
                 "[request_id=%s] flow=memory_save_skipped session_id=%s",
                 request_id,
-                session_id
+                session_id,
             )
 
         logger.info(
@@ -123,16 +125,17 @@ class ChatService:
             request_id,
             session_id,
             intent,
-            rag_used
+            rag_used,
         )
 
         self.chat_log_repository.save_chat_log(
             session_id=session_id,
             request_id=request_id,
-            user_message=cleaned_message,
+            user_input=cleaned_message,
             bot_reply=response,
             intent=intent,
-            rag_used=rag_used
+            rag_used=rag_used,
+            user_id=user_id,
         )
 
         logger.info(
@@ -140,7 +143,7 @@ class ChatService:
             request_id,
             session_id,
             intent,
-            rag_used
+            rag_used,
         )
 
         logger.info(
@@ -149,7 +152,7 @@ class ChatService:
             session_id,
             intent,
             rag_used,
-            len(response)
+            len(response),
         )
 
         result = {

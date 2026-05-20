@@ -2,16 +2,16 @@ from memory_manager import MemoryManager
 from chat_service import ChatService
 from retriever import FAISSRetriever
 import logging
-
+from uuid import UUID
 
 DEBUG_MODE = False
 logger = logging.getLogger(__name__)
 
 _retriever = None
 
-def get_memory(session_id: str):
-    return MemoryManager(session_id)
 
+def get_memory(session_id: str, user_id: UUID):
+    return MemoryManager(session_id, user_id)
 
 
 def initialize_retriever():
@@ -23,14 +23,12 @@ def initialize_retriever():
     return _retriever
 
 
-
 def get_retriever():
 
     if _retriever is None:
         raise RuntimeError("Retriever has not been initialized.")
 
     return _retriever
-
 
 
 def reload_retriever():
@@ -42,5 +40,4 @@ def reload_retriever():
 
 
 def build_chat_service(memory):
-    return ChatService(memory, retriever = get_retriever(), debug=DEBUG_MODE)
-    
+    return ChatService(memory, retriever=get_retriever(), debug=DEBUG_MODE)
