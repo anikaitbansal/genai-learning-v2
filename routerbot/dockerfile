@@ -6,7 +6,6 @@ WORKDIR /app
 
 # Copy requirements first (for caching)
 COPY requirements.txt .
-COPY requirements-docker.txt .
 
 # Install dependencies
 RUN pip install --no-cache-dir --default-timeout=600 \
