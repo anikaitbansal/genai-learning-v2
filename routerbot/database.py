@@ -6,21 +6,17 @@ from sqlalchemy.orm import sessionmaker
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set.")
 
 engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    echo=False
+    DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10, echo=False
 )
 
 SessionLocal = sessionmaker(
-    bind=engine,
-    autocommit=False,
-    autoflush=False,
-    expire_on_commit=False
+    bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
 )
+
 
 def get_db():
     db = SessionLocal()
@@ -28,6 +24,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 def verify_connection():
     try:

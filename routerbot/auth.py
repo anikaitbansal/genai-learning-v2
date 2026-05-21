@@ -3,15 +3,17 @@ import os
 import logging
 from typing import Optional
 from fastapi import Depends, Request
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, exceptions
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
     JWTStrategy,
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
+from fastapi_users.jwt import decode_jwt, generate_jwt
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from models import User
+from token_blocklist import is_blocklisted
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +67,52 @@ async def get_user_manager(user_db=Depends(get_user_db)):
 bearer_transport = BearerTransport(tokenUrl="auth/login")
 
 
+class RedisAwareJWTStrategy(JWTStrategy):
+    async def write_token(self, user: User) -> str:
+        jti = str(uuid.uuid4())
+        data = {
+            "sub": str(user.id),
+            "aud": self.token_audience,
+            "jti": jti,
+        }
+        token = generate_jwt(
+            data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm
+        )
+        logger.info(f"auth_stage = token_issued user_id: {user.id} jti: {jti}")
+        return token
+
+    async def read_token(
+        self, token: Optional[str], user_manager: BaseUserManager
+    ) -> Optional[User]:
+        if token is None:
+            return None
+
+        try:
+            data = decode_jwt(
+                token, self.decode_key, self.token_audience, algorithms=[self.algorithm]
+            )
+        except Exception:
+            logger.info("auth_stage = token_rejected reason = decode_failed")
+            return None
+
+        jti = data.get("jti")
+        if jti and is_blocklisted(jti):
+            logger.info(f"auth_stage = token_rejected reason = blocklisted jti: {jti}")
+            return None
+
+        user_id = data.get("sub")
+        if user_id is None:
+            return None
+
+        try:
+            parsed_user_id = uuid.UUID(user_id)
+            return await user_manager.get(parsed_user_id)
+        except (exceptions.UserNotExists, ValueError):
+            return None
+
+
 def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=SECRET, lifetime_seconds=3600)
+    return RedisAwareJWTStrategy(secret=SECRET, lifetime_seconds=3600)
 
 
 auth_backend = AuthenticationBackend(
