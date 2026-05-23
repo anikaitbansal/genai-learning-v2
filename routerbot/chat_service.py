@@ -1,6 +1,7 @@
 import logging
+from typing import cast
 from chat_log_repository import ChatLogRepository
-from langgraph_flow import build_langgraph_flow
+from langgraph_flow import build_langgraph_flow, GraphState
 
 logger = logging.getLogger(__name__)
 
@@ -31,26 +32,13 @@ class ChatService:
         )
 
         logger.info(
-            "[request_id=%s] flow=memory_load_start session_id=%s",
-            request_id,
-            session_id,
-        )
-
-        chat_history = self.memory.load()
-        logger.info(
-            "[request_id=%s] flow=memory_load_done session_id=%s history_messages=%s",
-            request_id,
-            session_id,
-            len(chat_history),
-        )
-
-        logger.info(
             f"[request_id={request_id}] flow=graph_start session_id={session_id}"
         )
 
         initial_state = {
             "original_message": cleaned_message,
-            "chat_history": chat_history,
+            "session_id": session_id,
+            "user_id": user_id,
             "use_rag": use_rag,
             "retriever": self.retriever,
             "intent": "",
@@ -62,7 +50,7 @@ class ChatService:
             "retry_count": 0,
         }
 
-        final_state = self.graph.invoke(initial_state)
+        final_state = self.graph.invoke(cast(GraphState, initial_state))
 
         intent = final_state["intent"]
         retrieved_chunks = final_state["retrieved_chunks"]
@@ -75,50 +63,6 @@ class ChatService:
         logger.info(
             f"[request_id={request_id}] flow=graph_done session_id={session_id} intent={intent} rag_used={rag_used} retry_count={retry_count} response_length={len(response)}"
         )
-
-        logger.info(
-            "[request_id=%s] flow=memory_update_start session_id=%s",
-            request_id,
-            session_id,
-        )
-
-        should_save_to_memory = True
-
-        if should_save_to_memory:
-            chat_history.append({"role": "user", "content": cleaned_message})
-            chat_history.append({"role": "assistant", "content": response})
-
-            if len(chat_history) > 11:
-                chat_history[:] = [chat_history[0]] + chat_history[-10:]
-
-            logger.info(
-                "[request_id=%s] flow=memory_update_done session_id=%s history_messages=%s",
-                request_id,
-                session_id,
-                len(chat_history),
-            )
-
-            logger.info(
-                "[request_id=%s] flow=memory_save_start session_id=%s",
-                request_id,
-                session_id,
-            )
-
-            self.memory.save(chat_history)
-
-            logger.info(
-                "[request_id=%s] flow=memory_save_done session_id=%s history_messages=%s",
-                request_id,
-                session_id,
-                len(chat_history),
-            )
-
-        else:
-            logger.info(
-                "[request_id=%s] flow=memory_save_skipped session_id=%s",
-                request_id,
-                session_id,
-            )
 
         logger.info(
             "[request_id=%s] flow=db_save_start session_id=%s intent=%s rag_used=%s",

@@ -1,31 +1,24 @@
+from uuid import UUID
 from config import MODEL_NAME
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import ConfigurableFieldSpec
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_memory_adapter import LangChainMemoryAdapter
 
-llm = ChatGroq(
-    model = MODEL_NAME,
-    temperature = 0.2
-)
-
+handler_llm = ChatGroq(model=MODEL_NAME, temperature=0.2)
 
 SYSTEM_PROMPTS = {
-    "chat": "You are a helpful assistant. Use previous conversation context when relevant.",
-    "summarize": "You summarize text clearly and concisely. Use previous context if the user is referring to earlier text.",
+    "chat": "You are a helpful assistant with access to a knowledge base that may include user-uploaded documents. When a user asks about a document or uploaded file, use the retrieved context — it contains content extracted from that document. Use previous conversation context when relevant.",
+    "summarize": "You summarize text clearly and concisely. If the user asks to summarize an uploaded document, use the retrieved context which contains the document's content. Use previous context if the user is referring to earlier text.",
     "email": "You are a professional email writer. If the user is refining a previously written email, use conversation context.",
-    "code": "You help debug and explain code clearly. Use previous conversation context if the user is referring to earlier code."
+    "code": "You help debug and explain code clearly. Use previous conversation context if the user is referring to earlier code.",
 }
 
-# Create prompt template
-RESPONSE_PROMPT = ChatPromptTemplate.from_template(
-    "{system_prompt}\n\n"
-    "Chat History:\n{history}\n\n"
-    "User: {input}\n"
-    "Assistant:"
-)
-
-
 output_parser = StrOutputParser()
+
 
 def build_rag_prompt(base_prompt, retrieved_chunks):
     if not retrieved_chunks:
@@ -36,48 +29,85 @@ def build_rag_prompt(base_prompt, retrieved_chunks):
         context_lines.append(
             f"Context {index}:\n"
             f"Title: {chunk['title']}\n"
-            f"Content: {chunk['content']}"
+            f"Content: {chunk['content']}\n"
         )
 
     joined_context = "\n\n".join(context_lines)
 
     return (
         f"{base_prompt}\n\n"
-        f"You have been given retrieved context from the knowledge base.\n"
-        f"If the retrieved context is relevant to the user's question, use it as the primary source for your answer.\n"
-        f"Do not say you do not have access to the document, resume, file, or uploaded content if relevant context is already provided below.\n"
-        f"Do not ignore clearly relevant retrieved context.\n"
-        f"If the retrieved context is partial, answer using the available context and say briefly that the answer is based on the retrieved information.\n"
-        f"Keep the answer grounded in the retrieved content and explain in your own words.\n\n"
+        f"The following context was retrieved from the knowledge base, which may include user-uploaded documents (PDFs and files).\n"
+        f"Use this context to answer the user's question — if the user is asking about a document or uploaded file, this context contains its content.\n"
+        f"If the context helps, use it to answer more accurately.\n"
+        f"If the context is genuinely unrelated to the question, you may answer from general knowledge instead.\n"
+        f"Synthesize the information in your own words; do not copy verbatim unless the user asks for an exact quote.\n\n"
         f"Retrieved Context:\n{joined_context}"
     )
 
 
-
-def build_history_text(chat_history, use_history=True):
-
-    # Build history text
-    if not use_history or not chat_history:
-        return ""
-    
-    history_lines = []
-    for message in chat_history:
-        history_lines.append(f"{message['role']}: {message['content']}")
-
-    return "\n".join(history_lines)
+def get_message_history(session_id: str, user_id: UUID) -> BaseChatMessageHistory:
+    return LangChainMemoryAdapter(session_id=session_id, user_id=user_id)
 
 
-            
+HISTORY_FACTORY_CONFIG = [
+    ConfigurableFieldSpec(
+        id="session_id",
+        annotation=str,
+        name="Session ID",
+        description="Unique identifier for the chat session.",
+        default="",
+        is_shared=True,
+    ),
+    ConfigurableFieldSpec(
+        id="user_id",
+        annotation=UUID,
+        name="User ID",
+        description="Authenticated user owning the session.",
+        default=None,
+        is_shared=True,
+    ),
+]
+
+
+def build_chain_with_history(system_prompt_text: str):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", "{system_prompt}"),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{user_input}"),
+        ]
+    )
+
+    base_chain = prompt | handler_llm | output_parser
+
+    chain_with_history = RunnableWithMessageHistory(
+        base_chain,
+        get_message_history,
+        input_messages_key="user_input",
+        history_messages_key="history",
+        history_factory_config=HISTORY_FACTORY_CONFIG,
+    )
+
+    return chain_with_history
+
+
+CHAINS_BY_INTENT = {
+    intent: build_chain_with_history(system_prompt_text)
+    for intent, system_prompt_text in SYSTEM_PROMPTS.items()
+}
+
+
 def generate_response(
-    system_prompt,
-    user_input,
-    chat_history,
-    use_history=True,
+    intent: str,
+    user_input: str,
+    session_id: str,
+    user_id: UUID,
     retrieved_chunks=None,
-    retry_reason="",
-    retry_count=0
+    retry_reason: str = "",
+    retry_count: int = 0,
 ):
-    final_system_prompt = build_rag_prompt(system_prompt, retrieved_chunks or [])
+    base_system_prompt = SYSTEM_PROMPTS[intent]
+    final_system_prompt = build_rag_prompt(base_system_prompt, retrieved_chunks or [])
 
     if retry_count == 1 and retry_reason.strip():
         final_system_prompt = (
@@ -88,64 +118,95 @@ def generate_response(
             f"Strictly fix the issue above."
         )
 
-    history_text = build_history_text(chat_history, use_history=use_history)
+    chain = CHAINS_BY_INTENT[intent]
 
-    chain = RESPONSE_PROMPT | llm | output_parser
+    bot_response = chain.invoke(
+        {
+            "system_prompt": final_system_prompt,
+            "user_input": user_input,
+        },
+        config={
+            "configurable": {
+                "session_id": session_id,
+                "user_id": user_id,
+            }
+        },
+    )
 
-    bot_reply = chain.invoke({
-        "system_prompt": final_system_prompt,
-        "history": history_text,
-        "input": user_input
-    })
+    return bot_response
 
-    return bot_reply
 
-    
-
-def handle_chat(user_input, chat_history, retrieved_chunks=None, retry_reason="", retry_count=0):
+def handle_chat(
+    user_input,
+    session_id,
+    user_id,
+    retrieved_chunks=None,
+    retry_reason="",
+    retry_count=0,
+):
     return generate_response(
-        SYSTEM_PROMPTS["chat"],
+        "chat",
         user_input,
-        chat_history,
-        use_history=True,
-        retrieved_chunks=retrieved_chunks,
-        retry_reason=retry_reason,
-        retry_count=retry_count
+        session_id,
+        user_id,
+        retrieved_chunks,
+        retry_reason,
+        retry_count,
     )
 
 
-def handle_summarize(user_input, chat_history, retrieved_chunks=None, retry_reason="", retry_count=0):
+def handle_email(
+    user_input,
+    session_id,
+    user_id,
+    retrieved_chunks=None,
+    retry_reason="",
+    retry_count=0,
+):
     return generate_response(
-        SYSTEM_PROMPTS["summarize"],
+        "email",
         user_input,
-        chat_history,
-        use_history=True,
-        retrieved_chunks=retrieved_chunks,
-        retry_reason=retry_reason,
-        retry_count=retry_count
+        session_id,
+        user_id,
+        retrieved_chunks,
+        retry_reason,
+        retry_count,
     )
 
 
-def handle_email(user_input, chat_history, retrieved_chunks=None, retry_reason="", retry_count=0):
+def handle_summarize(
+    user_input,
+    session_id,
+    user_id,
+    retrieved_chunks=None,
+    retry_reason="",
+    retry_count=0,
+):
     return generate_response(
-        SYSTEM_PROMPTS["email"],
+        "summarize",
         user_input,
-        chat_history,
-        use_history=True,
-        retrieved_chunks=retrieved_chunks,
-        retry_reason=retry_reason,
-        retry_count=retry_count
+        session_id,
+        user_id,
+        retrieved_chunks,
+        retry_reason,
+        retry_count,
     )
 
 
-def handle_code(user_input, chat_history, retrieved_chunks=None, retry_reason="", retry_count=0):
+def handle_code(
+    user_input,
+    session_id,
+    user_id,
+    retrieved_chunks=None,
+    retry_reason="",
+    retry_count=0,
+):
     return generate_response(
-        SYSTEM_PROMPTS["code"],
+        "code",
         user_input,
-        chat_history,
-        use_history=True,
-        retrieved_chunks=retrieved_chunks,
-        retry_reason=retry_reason,
-        retry_count=retry_count
+        session_id,
+        user_id,
+        retrieved_chunks,
+        retry_reason,
+        retry_count,
     )
-

@@ -1,10 +1,12 @@
 import re
 import logging
+from uuid import UUID
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
 
 from routing import classify_intent, handlers
 from response_evaluator import ResponseEvaluator
+from langchain_memory_adapter import LangChainMemoryAdapter
 from config import RAG_TOP_K
 
 logger = logging.getLogger(__name__)
@@ -12,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 class GraphState(TypedDict):
     original_message: str
-    chat_history: list[dict[str, str]]
+    session_id: str
+    user_id: UUID
     use_rag: bool
     retriever: Any
     intent: str
@@ -25,7 +28,9 @@ class GraphState(TypedDict):
 
 
 def classify_node(state: GraphState) -> GraphState:
-    logger.info("graph_node=classify_start message_length=%s", len(state["original_message"]))
+    logger.info(
+        "graph_node=classify_start message_length=%s", len(state["original_message"])
+    )
 
     intent = classify_intent(state["original_message"])
     state["intent"] = intent
@@ -34,15 +39,12 @@ def classify_node(state: GraphState) -> GraphState:
     return state
 
 
-
 def build_retrieval_query(user_message: str) -> str:
     cleaned = user_message.strip().lower()
 
-    # Remove fluff
     cleaned = re.sub(r"\b(hi|hello|hey|thanks|please|buddy)\b", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    # 🔥 Smart query transformation
     if "name" in cleaned:
         return "person name full name candidate resume cv"
 
@@ -67,7 +69,6 @@ def build_retrieval_query(user_message: str) -> str:
     return cleaned
 
 
-
 def retrieve_node(state: GraphState) -> GraphState:
     logger.info("graph_node=retrieve_start use_rag=%s", state["use_rag"])
 
@@ -79,14 +80,11 @@ def retrieve_node(state: GraphState) -> GraphState:
         logger.info(
             "graph_node=retrieve_query_built original_message=%s retrieval_query=%s",
             state["original_message"],
-            retrieval_query
+            retrieval_query,
         )
 
-        retrieved_chunks = state["retriever"].retrieve(
-            retrieval_query,
-            top_k=RAG_TOP_K
-        )
-        
+        retrieved_chunks = state["retriever"].retrieve(retrieval_query, top_k=RAG_TOP_K)
+
         rag_used = len(retrieved_chunks) > 0
 
     state["retrieved_chunks"] = retrieved_chunks
@@ -95,7 +93,7 @@ def retrieve_node(state: GraphState) -> GraphState:
     logger.info(
         "graph_node=retrieve_done rag_used=%s retrieved_count=%s",
         rag_used,
-        len(retrieved_chunks)
+        len(retrieved_chunks),
     )
     return state
 
@@ -106,17 +104,18 @@ def generate_node(state: GraphState) -> GraphState:
         "graph_node=generate_start intent=%s rag_used=%s retry_count=%s",
         intent,
         state["rag_used"],
-        state["retry_count"]
+        state["retry_count"],
     )
 
     handler = handlers.get(intent, handlers["chat"])
 
     bot_reply = handler(
         state["original_message"],
-        state["chat_history"],
+        state["session_id"],
+        state["user_id"],
         retrieved_chunks=state["retrieved_chunks"],
         retry_reason=state.get("evaluation_reason", ""),
-        retry_count=state["retry_count"]
+        retry_count=state["retry_count"],
     )
 
     state["bot_reply"] = bot_reply
@@ -130,10 +129,21 @@ def evaluate_node(state: GraphState) -> GraphState:
 
     evaluator = ResponseEvaluator()
 
+    adapter = LangChainMemoryAdapter(
+        session_id=state["session_id"], user_id=state["user_id"]
+    )
+    history_messages = adapter.messages
+
+    chat_history_for_eval = []
+    for message in history_messages:
+        role_map = {"system": "system", "human": "user", "ai": "assistant"}
+        role = role_map.get(message.type, "user")
+        chat_history_for_eval.append({"role": role, "content": message.content})
+
     evaluation_result = evaluator.evaluate(
         user_input=state["original_message"],
         bot_response=state["bot_reply"],
-        chat_history=state["chat_history"]
+        chat_history=chat_history_for_eval,
     )
 
     state["evaluation"] = evaluation_result
@@ -143,7 +153,7 @@ def evaluate_node(state: GraphState) -> GraphState:
         "graph_node=evaluate_done score=%s reason=%s retry_count=%s",
         evaluation_result["score"],
         state["evaluation_reason"],
-        state["retry_count"]
+        state["retry_count"],
     )
     return state
 
@@ -154,7 +164,7 @@ def prepare_retry_node(state: GraphState) -> GraphState:
     logger.info(
         "graph_node=prepare_retry retry_count=%s reason=%s",
         state["retry_count"],
-        state.get("evaluation_reason", "")
+        state.get("evaluation_reason", ""),
     )
     return state
 
@@ -165,7 +175,7 @@ def route_after_evaluation(state: GraphState) -> str:
     if score == "correct":
         logger.info(
             "graph_route=finish reason=score_correct retry_count=%s",
-            state["retry_count"]
+            state["retry_count"],
         )
         return "end"
 
@@ -173,14 +183,12 @@ def route_after_evaluation(state: GraphState) -> str:
         logger.info(
             "graph_route=finish reason=retry_limit_reached score=%s retry_count=%s",
             score,
-            state["retry_count"]
+            state["retry_count"],
         )
         return "end"
 
     logger.info(
-        "graph_route=retry reason=score_%s retry_count=%s",
-        score,
-        state["retry_count"]
+        "graph_route=retry reason=score_%s retry_count=%s", score, state["retry_count"]
     )
     return "prepare_retry"
 
@@ -204,10 +212,7 @@ def build_langgraph_flow():
     graph_builder.add_conditional_edges(
         "evaluate",
         route_after_evaluation,
-        {
-            "prepare_retry": "prepare_retry",
-            "end": END
-        }
+        {"prepare_retry": "prepare_retry", "end": END},
     )
 
     return graph_builder.compile()
