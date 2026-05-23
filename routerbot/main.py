@@ -17,6 +17,7 @@ from app_database import initialize_database
 from auth import fastapi_users, auth_backend
 from schemas import UserRead, UserCreate, UserUpdate
 from database import verify_connection
+from qdrant_client_provider import verify_qdrant_connection
 from redis_client import verify_redis_connection
 from auth_routes import router as auth_logout_router
 
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     initialize_database()
     verify_connection()
     verify_redis_connection()
+    verify_qdrant_connection()
     initialize_retriever()
     logger.info("Application startup completed successfully.")
     yield
