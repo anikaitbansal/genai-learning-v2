@@ -10,7 +10,7 @@ from schemas import (
     BuildKnowledgeBaseResponse,
     UploadPDFResponse,
 )
-from dependencies import get_memory, build_chat_service, reload_retriever, get_retriever
+from dependencies import get_memory, build_chat_service
 from feedback_manager import FeedbackManager
 from build_knowledge_base import build_knowledge_base
 from pdf_ingestion import ingest_pdf_file
@@ -54,7 +54,7 @@ def chat(
         )
 
         memory = get_memory(request.session_id, user.id)
-        service = build_chat_service(memory)
+        service = build_chat_service(memory, user.id)
 
         logger.info(
             f"Request ID: {request_id} - endpoint = /chat stage = service_call_start "
@@ -126,7 +126,7 @@ def chat_form(
         )
 
         memory = get_memory(session_id, user.id)
-        service = build_chat_service(memory)
+        service = build_chat_service(memory, user.id)
 
         logger.info(
             f"Request ID: {request_id} - endpoint = /chat-form stage = service_call_start "
@@ -286,7 +286,6 @@ def rebuild_knowledge_base(http_request: Request):
         logger.info("[request_id=%s] Rebuilding knowledge base", request_id)
 
         result = build_knowledge_base()
-        reload_retriever()
 
         logger.info(
             "[request_id=%s] Knowledge base rebuilt successfully | documents=%s | chunks=%s | file=%s",
@@ -327,8 +326,6 @@ async def upload_pdf(
         file.file.seek(0)
 
         result = ingest_pdf_file(file.file, file.filename, str(user.id))
-
-        reload_retriever()
 
         logger.info(
             f"Request ID: {request_id} - endpoint = /upload-pdf stage = processing_done "

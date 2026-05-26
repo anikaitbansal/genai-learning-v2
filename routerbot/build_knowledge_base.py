@@ -75,7 +75,7 @@ def build_knowledge_base():
         faiss.normalize_L2(embedding_matrix)
         vector_dimension = embedding_matrix.shape[1]
         index = faiss.IndexFlatIP(vector_dimension)
-        index.add(embedding_matrix)
+        index.add(embedding_matrix)  # type: ignore
         faiss.write_index(index, FAISS_INDEX_FILE)
 
     return {

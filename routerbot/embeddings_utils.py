@@ -4,6 +4,7 @@ from config import EMBEDDING_MODEL_NAME
 
 _embedding_model = None
 
+
 def get_embedding_model():
     global _embedding_model
 
@@ -12,10 +13,12 @@ def get_embedding_model():
 
     return _embedding_model
 
-def embed_text(text: str) -> list[float]:
+
+def embed_text(text: str) -> list:
     model = get_embedding_model()
     vector = model.encode(text, convert_to_numpy=True)
     return vector.tolist()
+
 
 def cosine_similarity(vector_a: list[float], vec_b: list[float]) -> float:
     if not vector_a or not vec_b:
