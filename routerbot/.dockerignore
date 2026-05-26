@@ -9,3 +9,10 @@ memory_store
 *.db
 .streamlit
 .vscode
+graphify-out
+.gemini
+repomix-output.xml
+uploads
+faiss_index
+knowledge_index*
+*.log

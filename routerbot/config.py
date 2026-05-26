@@ -17,6 +17,8 @@ RAG_KNOWLEDGE_FILE = "knowledge_base.json"
 RAG_METADATA_FILE = "data/knowledge_metadata.json"
 FAISS_INDEX_FILE = "data/knowledge_index"
 RAG_TOP_K = 7
+RAG_CHUNK_SIZE = 800
+RAG_CHUNK_OVERLAP = 120
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 RAG_SIMILARITY_THRESHOLD = 0.30
 
