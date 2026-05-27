@@ -1,4 +1,6 @@
 import logging
+import uuid as uuid_module
+from embeddings_utils import embed_text
 from qdrant_client.models import (
     Distance,
     VectorParams,
@@ -6,13 +8,12 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    PayloadSchemaType,
 )
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client import QdrantClient
 from config import QDRANT_COLLECTION_NAME
 from qdrant_client_provider import get_qdrant_client
-from embeddings_utils import embed_text
-import uuid as uuid_module
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,32 @@ def ensure_collection_exists():
             f"qdrant_stage = collection_created name: {QDRANT_COLLECTION_NAME} dimension: {EMBEDDING_DIMENSION}"
         )
 
+    ensure_payload_indexes()
+
+
+def ensure_payload_indexes():
+    client: QdrantClient = get_qdrant_client()
+
+    indexed_fields = ["user_id", "doc_id"]
+
+    for field_name in indexed_fields:
+        try:
+            client.create_payload_index(
+                collection_name=QDRANT_COLLECTION_NAME,
+                field_name=field_name,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+            logger.info(
+                f"qdrant_stage = payload_index_ensured field: {field_name} schema: keyword"
+            )
+        except Exception as error:
+            logger.warning(
+                f"qdrant_stage = payload_index_skip field: {field_name} reason: {str(error)}"
+            )
+
 
 def upsert_chunks(chunks: list[dict], user_id: str) -> dict:
+
     client: QdrantClient = get_qdrant_client()
 
     points = []
@@ -48,7 +73,7 @@ def upsert_chunks(chunks: list[dict], user_id: str) -> dict:
 
         point = PointStruct(
             id=str(uuid_module.uuid5(uuid_module.NAMESPACE_DNS, chunk["id"])),
-            vector=vector,
+            vector=vector,  # type: ignore
             payload={
                 "user_id": user_id,
                 "doc_id": chunk["doc_id"],

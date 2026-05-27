@@ -14,10 +14,10 @@ def get_embedding_model():
     return _embedding_model
 
 
-def embed_text(text: str) -> list:
+def embed_text(text: str) -> list[float]:
     model = get_embedding_model()
     vector = model.encode(text, convert_to_numpy=True)
-    return vector.tolist()
+    return vector.tolist()  # type: ignore
 
 
 def cosine_similarity(vector_a: list[float], vec_b: list[float]) -> float:

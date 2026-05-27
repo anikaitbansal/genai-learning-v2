@@ -7,12 +7,10 @@ from schemas import (
     ResetRequest,
     FeedbackRequest,
     FeedbackSummaryResponse,
-    BuildKnowledgeBaseResponse,
     UploadPDFResponse,
 )
 from dependencies import get_memory, build_chat_service
 from feedback_manager import FeedbackManager
-from build_knowledge_base import build_knowledge_base
 from pdf_ingestion import ingest_pdf_file
 from auth import current_active_user
 from models import User
@@ -272,36 +270,6 @@ def feedback_summary(http_request: Request, user: User = Depends(current_active_
     except Exception as error:
         logger.exception(
             f"Request ID: {request_id} - Error while generating feedback summary"
-        )
-        raise HTTPException(status_code=500, detail=str(error))
-
-
-@router.post(
-    "/knowledge-base/rebuild", response_model=BuildKnowledgeBaseResponse, tags=["rag"]
-)
-def rebuild_knowledge_base(http_request: Request):
-    request_id = http_request.state.request_id
-
-    try:
-        logger.info("[request_id=%s] Rebuilding knowledge base", request_id)
-
-        result = build_knowledge_base()
-
-        logger.info(
-            "[request_id=%s] Knowledge base rebuilt successfully | documents=%s | chunks=%s | file=%s",
-            request_id,
-            result["total_documents"],
-            result["total_chunks"],
-            result["knowledge_file"],
-        )
-
-        return result
-
-    except Exception as error:
-        logger.exception(
-            "[request_id=%s] Error while rebuilding knowledge base: %s",
-            request_id,
-            str(error),
         )
         raise HTTPException(status_code=500, detail=str(error))
 

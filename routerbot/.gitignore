@@ -4,8 +4,6 @@ __pycache__/
 .vscode/
 memory_store/
 data/
-faiss_index/
-knowledge_index*
 uploads/
 *.db
 *.log
