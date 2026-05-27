@@ -127,3 +127,42 @@ def retrieve_from_qdrant(query: str, user_id: str, top_k: int = 5) -> list[dict]
     )
 
     return chunks
+
+
+def fetch_all_chunks_for_user(user_id: str) -> list[dict]:
+    client: QdrantClient = get_qdrant_client()
+
+    all_chunks = []
+    next_page_offset = None
+
+    while True:
+        points, next_page_offset = client.scroll(
+            collection_name=QDRANT_COLLECTION_NAME,
+            scroll_filter=Filter(
+                must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+            ),
+            limit=100,
+            offset=next_page_offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        for point in points:
+            payload = point.payload or {}
+            all_chunks.append(
+                {
+                    "id": payload.get("chunk_id", ""),
+                    "title": payload.get("title", ""),
+                    "content": payload.get("content", ""),
+                }
+            )
+
+        if next_page_offset is None:
+            break
+
+    logger.info(
+        f"qdrant_stage = fetch_all_done user_id: {user_id} "
+        f"total_chunks: {len(all_chunks)}"
+    )
+
+    return all_chunks
