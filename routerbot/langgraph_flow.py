@@ -4,6 +4,7 @@ from uuid import UUID
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
 
+from retriever import retrieve_as_dicts
 from routing import classify_intent, handlers
 from response_evaluator import ResponseEvaluator
 from langchain_memory_adapter import LangChainMemoryAdapter
@@ -83,7 +84,9 @@ def retrieve_node(state: GraphState) -> GraphState:
             retrieval_query,
         )
 
-        retrieved_chunks = state["retriever"].retrieve(retrieval_query, top_k=RAG_TOP_K)
+        retrieved_chunks = retrieve_as_dicts(
+            state["retriever"], retrieval_query, top_k=RAG_TOP_K
+        )
 
         rag_used = len(retrieved_chunks) > 0
 

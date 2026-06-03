@@ -2,7 +2,7 @@ import logging
 from typing import List
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from langchain_groq import ChatGroq
-from config import MODEL_NAME
+from config import MODEL_NAME, MULTI_QUERY_PROMPT_TEMPLATE
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
@@ -52,60 +52,27 @@ class QdrantRetriever(BaseRetriever):
 
         return documents
 
-    def retrieve(self, query: str, top_k: int = RAG_TOP_K) -> list[dict]:
-        documents = self._get_relevant_documents(
-            query, run_manager=None  # type: ignore
-        )
-        return [
-            {
-                "id": doc.metadata.get("id", ""),
-                "title": doc.metadata.get("title", ""),
-                "content": doc.page_content,
-                "score": 0.0,
-            }
-            for doc in documents[:top_k]
-        ]
+
+def retrieve_as_dicts(
+    retriever: BaseRetriever, query: str, top_k: int = RAG_TOP_K
+) -> list[dict]:
+    documents = retriever.invoke(query)
+
+    return [
+        {
+            "id": doc.metadata.get("id", ""),
+            "title": doc.metadata.get("title", ""),
+            "content": doc.page_content,
+            "score": 0.0,
+        }
+        for doc in documents[:top_k]
+    ]
 
 
 MULTI_QUERY_PROMPT = PromptTemplate(
     input_variables=["question"],
-    template=(
-        "You are an AI assistant. Your task is to generate exactly 3 different "
-        "rephrasings of the user's question to help retrieve relevant documents "
-        "from a vector database.\n\n"
-        "Strict output rules:\n"
-        "- Output EXACTLY 3 lines\n"
-        "- One rephrased question per line\n"
-        "- No numbering, no bullets, no preamble, no explanations\n"
-        "- No blank lines\n"
-        "- Each line must be a complete standalone question\n\n"
-        "Original question: {question}\n\n"
-        "Three rephrased questions:"
-    ),
+    template=MULTI_QUERY_PROMPT_TEMPLATE,
 )
-
-
-def build_multi_query_retriever(user_id: str) -> MultiQueryRetriever:
-    base_retriever = QdrantRetriever(user_id=user_id)
-
-    query_generation_llm = ChatGroq(
-        model=MODEL_NAME,
-        temperature=0.0,
-    )
-
-    multi_query_retriever = MultiQueryRetriever.from_llm(
-        retriever=base_retriever,
-        llm=query_generation_llm,
-        prompt=MULTI_QUERY_PROMPT,
-        include_original=True,
-    )
-
-    logger.info(
-        f"retriever_stage = multi_query_built user_id: {user_id} "
-        f"base: QdrantRetriever llm: {MODEL_NAME}"
-    )
-
-    return multi_query_retriever
 
 
 def build_bm25_retriever(user_id: str) -> BM25Retriever:

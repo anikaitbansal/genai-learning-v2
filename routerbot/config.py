@@ -83,3 +83,18 @@ Rules:
 - Do not add extra text
 - check if the user input instructions were strictly matched. 
 """
+
+
+MULTI_QUERY_PROMPT_TEMPLATE = (
+    "You are an AI assistant. Your task is to generate exactly 3 different "
+    "rephrasings of the user's question to help retrieve relevant documents "
+    "from a vector database.\n\n"
+    "Strict output rules:\n"
+    "- Output EXACTLY 3 lines\n"
+    "- One rephrased question per line\n"
+    "- No numbering, no bullets, no preamble, no explanations\n"
+    "- No blank lines\n"
+    "- Each line must be a complete standalone question\n\n"
+    "Original question: {question}\n\n"
+    "Three rephrased questions:"
+)
