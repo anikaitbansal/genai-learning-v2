@@ -1,42 +1,29 @@
-from config import MODEL_NAME, classifier_prompt
-from handlers import handle_chat, handle_summarize, handle_email, handle_code
+from config import MODEL_NAME, classifier_prompt, IntentSchema
+from handlers import handle_chat, handle_email, handle_summarize, handle_code
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from typing import cast
 
-classifier_llm = ChatGroq(
-    model=MODEL_NAME,
-    temperature=0.0
+classifier_llm = ChatGroq(model=MODEL_NAME, temperature=0.0)
+
+CLASSIFIER_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", classifier_prompt), ("user", "{user_input}")]
 )
 
-CLASSIFIER_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", classifier_prompt),
-    ("user", "{input}")
-])
+structured_classifier_llm = classifier_llm.with_structured_output(IntentSchema)
 
-classifier_parser = StrOutputParser()
-
-classifier_chain = CLASSIFIER_PROMPT | classifier_llm | classifier_parser
+classifier_chain = CLASSIFIER_PROMPT | structured_classifier_llm
 
 
 def classify_intent(user_input):
-    raw_intent = classifier_chain.invoke({
-        "input": user_input
-    }).strip().lower()
+    result = cast(IntentSchema, classifier_chain.invoke({"user_input": user_input}))
 
-    intent = raw_intent.split()[0]
-
-    valid_intents = ["chat", "summarize", "email", "code"]
-
-    if intent not in valid_intents:
-        intent = "chat"
-
-    return intent
+    return result.intent
 
 
 handlers = {
     "chat": handle_chat,
     "summarize": handle_summarize,
     "email": handle_email,
-    "code": handle_code
+    "code": handle_code,
 }

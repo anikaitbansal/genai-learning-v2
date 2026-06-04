@@ -1,5 +1,7 @@
 from groq import Groq
 import os
+from typing import Literal
+from pydantic import BaseModel, Field
 
 client = (
     Groq()
@@ -101,3 +103,9 @@ MULTI_QUERY_PROMPT_TEMPLATE = (
     "Original question: {question}\n\n"
     "Three rephrased questions:"
 )
+
+
+class IntentSchema(BaseModel):
+    intent: Literal["chat", "summarize", "email", "code"] = Field(
+        description="The single intent label that best matches the user's message."
+    )
