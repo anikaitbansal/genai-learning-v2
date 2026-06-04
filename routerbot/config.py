@@ -10,6 +10,9 @@ QDRANT_URL = os.environ.get("QDRANT_URL", "")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
 QDRANT_COLLECTION_NAME = "chatbot_chunks"
 
+COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
+COHERE_RERANK_MODEL = "rerank-v3.5"
+
 MODEL_NAME = "llama-3.1-8b-instant"
 EVALUATOR_MODEL_NAME = "llama-3.1-8b-instant"
 
