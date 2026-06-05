@@ -5,7 +5,7 @@ from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
 
 from retriever import retrieve_as_dicts
-from routing import classify_intent, handlers
+from routing import classify_intent, intent_branch
 from response_evaluator import ResponseEvaluator
 from langchain_memory_adapter import LangChainMemoryAdapter
 from config import RAG_TOP_K
@@ -102,28 +102,31 @@ def retrieve_node(state: GraphState) -> GraphState:
 
 
 def generate_node(state: GraphState) -> GraphState:
-    intent = state["intent"]
     logger.info(
-        "graph_node=generate_start intent=%s rag_used=%s retry_count=%s",
-        intent,
-        state["rag_used"],
-        state["retry_count"],
+        f"graph_node = generate_start intent: {state['intent']} rag_used: {state['rag_used']} retry_count: {state['retry_count']}"
     )
 
-    handler = handlers.get(intent, handlers["chat"])
+    inputs = {
+        "user_input": state["original_message"],
+        "session_id": state["session_id"],
+        "user_id": state["user_id"],
+        "retrieved_chunks": state["retrieved_chunks"],
+        "retry_reason": state.get("evaluation_reason", ""),
+        "retry_count": state["retry_count"],
+    }
 
-    bot_reply = handler(
-        state["original_message"],
-        state["session_id"],
-        state["user_id"],
-        retrieved_chunks=state["retrieved_chunks"],
-        retry_reason=state.get("evaluation_reason", ""),
-        retry_count=state["retry_count"],
+    bot_response = intent_branch.invoke(
+        {
+            "intent": state["intent"],
+            "inputs": inputs,
+        }
     )
 
-    state["bot_reply"] = bot_reply
+    state["bot_reply"] = bot_response
 
-    logger.info("graph_node=generate_done response_length=%s", len(bot_reply))
+    logger.info(
+        f"graph_node = generate_done response_length: {len(bot_response)} retry_count: {state['retry_count']}"
+    )
     return state
 
 

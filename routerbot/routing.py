@@ -2,6 +2,7 @@ from config import MODEL_NAME, classifier_prompt, IntentSchema
 from handlers import handle_chat, handle_email, handle_summarize, handle_code
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableBranch, RunnableLambda
 from typing import cast
 
 classifier_llm = ChatGroq(model=MODEL_NAME, temperature=0.0)
@@ -27,3 +28,20 @@ handlers = {
     "email": handle_email,
     "code": handle_code,
 }
+
+
+intent_branch = RunnableBranch(
+    (
+        lambda x: x["intent"] == "summarize",  # type: ignore
+        RunnableLambda(lambda x: handle_summarize(x["inputs"])),  # type: ignore
+    ),
+    (
+        lambda x: x["intent"] == "email",  # type: ignore
+        RunnableLambda(lambda x: handle_email(x["inputs"])),  # type: ignore
+    ),
+    (
+        lambda x: x["intent"] == "code",  # type: ignore
+        RunnableLambda(lambda x: handle_code(x["inputs"])),  # type: ignore
+    ),
+    RunnableLambda(lambda x: handle_chat(x["inputs"])),  # type: ignore
+)

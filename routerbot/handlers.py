@@ -97,15 +97,14 @@ CHAINS_BY_INTENT = {
 }
 
 
-def generate_response(
-    intent: str,
-    user_input: str,
-    session_id: str,
-    user_id: UUID,
-    retrieved_chunks=None,
-    retry_reason: str = "",
-    retry_count: int = 0,
-):
+def generate_response(intent: str, inputs: dict):
+    user_input = inputs["user_input"]
+    session_id = inputs["session_id"]
+    user_id = inputs["user_id"]
+    retrieved_chunks = inputs.get("retrieved_chunks")
+    retry_reason = inputs.get("retry_reason", "")
+    retry_count = inputs.get("retry_count", 0)
+
     base_system_prompt = SYSTEM_PROMPTS[intent]
     final_system_prompt = build_rag_prompt(base_system_prompt, retrieved_chunks or [])
 
@@ -136,77 +135,17 @@ def generate_response(
     return bot_response
 
 
-def handle_chat(
-    user_input,
-    session_id,
-    user_id,
-    retrieved_chunks=None,
-    retry_reason="",
-    retry_count=0,
-):
-    return generate_response(
-        "chat",
-        user_input,
-        session_id,
-        user_id,
-        retrieved_chunks,
-        retry_reason,
-        retry_count,
-    )
+def handle_chat(inputs: dict):
+    return generate_response("chat", inputs)
 
 
-def handle_email(
-    user_input,
-    session_id,
-    user_id,
-    retrieved_chunks=None,
-    retry_reason="",
-    retry_count=0,
-):
-    return generate_response(
-        "email",
-        user_input,
-        session_id,
-        user_id,
-        retrieved_chunks,
-        retry_reason,
-        retry_count,
-    )
+def handle_email(inputs: dict):
+    return generate_response("email", inputs)
 
 
-def handle_summarize(
-    user_input,
-    session_id,
-    user_id,
-    retrieved_chunks=None,
-    retry_reason="",
-    retry_count=0,
-):
-    return generate_response(
-        "summarize",
-        user_input,
-        session_id,
-        user_id,
-        retrieved_chunks,
-        retry_reason,
-        retry_count,
-    )
+def handle_summarize(inputs: dict):
+    return generate_response("summarize", inputs)
 
 
-def handle_code(
-    user_input,
-    session_id,
-    user_id,
-    retrieved_chunks=None,
-    retry_reason="",
-    retry_count=0,
-):
-    return generate_response(
-        "code",
-        user_input,
-        session_id,
-        user_id,
-        retrieved_chunks,
-        retry_reason,
-        retry_count,
-    )
+def handle_code(inputs: dict):
+    return generate_response("code", inputs)
