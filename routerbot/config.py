@@ -109,3 +109,10 @@ class IntentSchema(BaseModel):
     intent: Literal["chat", "summarize", "email", "code"] = Field(
         description="The single intent label that best matches the user's message."
     )
+
+
+class EvaluationSchema(BaseModel):
+    score: Literal["correct", "partially_correct", "incorrect"] = Field(
+        description="The judgment of how well the bot response answers the user's request."
+    )
+    reason: str = Field(description="A short, specific reason explaining the score.")
