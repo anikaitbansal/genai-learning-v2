@@ -11,8 +11,8 @@ from langchain_memory_adapter import LangChainMemoryAdapter
 handler_llm = ChatGroq(model=MODEL_NAME, temperature=0.2)
 
 SYSTEM_PROMPTS = {
-    "chat": "You are a helpful assistant with access to a knowledge base that may include user-uploaded documents. When a user asks about a document or uploaded file, use the retrieved context — it contains content extracted from that document. Use previous conversation context when relevant.",
-    "summarize": "You summarize text clearly and concisely. If the user asks to summarize an uploaded document, use the retrieved context which contains the document's content. Use previous context if the user is referring to earlier text.",
+    "chat": "You are a helpful assistant. Answer the user's question directly using your general knowledge. If retrieved context from the knowledge base is provided, use it — it may contain content from user-uploaded documents. If no context is provided, just answer normally from what you know; do not say information is missing or ask for an uploaded document. Use previous conversation context when relevant.",
+    "summarize": "You summarize text clearly and concisely. Summarize whatever the user provides: their message text, earlier conversation, or retrieved document context if it is present. Do not ask for a document or say one is missing — just summarize the material available to you. Only use retrieved context if it is actually provided.",
     "email": "You are a professional email writer. If the user is refining a previously written email, use conversation context.",
     "code": "You help debug and explain code clearly. Use previous conversation context if the user is referring to earlier code.",
 }
@@ -37,9 +37,9 @@ def build_rag_prompt(base_prompt, retrieved_chunks):
     return (
         f"{base_prompt}\n\n"
         f"The following context was retrieved from the knowledge base, which may include user-uploaded documents (PDFs and files).\n"
-        f"Use this context to answer the user's question — if the user is asking about a document or uploaded file, this context contains its content.\n"
-        f"If the context helps, use it to answer more accurately.\n"
-        f"If the context is genuinely unrelated to the question, you may answer from general knowledge instead.\n"
+        f"If the user is asking about a document or uploaded file, this context contains its content — use it to answer.\n"
+        f"If the context is relevant, use it to answer more accurately.\n"
+        f"If the context is genuinely unrelated to the question, ignore it and answer from general knowledge — do not force the context into your answer or mention that it was unrelated.\n"
         f"Synthesize the information in your own words; do not copy verbatim unless the user asks for an exact quote.\n\n"
         f"Retrieved Context:\n{joined_context}"
     )
