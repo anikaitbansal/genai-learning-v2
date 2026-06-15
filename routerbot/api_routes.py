@@ -3,18 +3,22 @@ from fastapi import APIRouter, HTTPException, Request, Form, UploadFile, File
 from schemas import (
     ChatRequest,
     ChatResponse,
-    ResetResponse,
     ResetRequest,
+    ResetResponse,
     FeedbackRequest,
     FeedbackSummaryResponse,
     UploadPDFResponse,
+    DocumentListResponse,
+    DocumentDeleteResponse,
 )
 from dependencies import get_memory, build_chat_service
 from feedback_manager import FeedbackManager
 from pdf_ingestion import ingest_pdf_file
+from qdrant_store import delete_chunks_by_doc_id
 from auth import current_active_user
 from models import User
 from fastapi import Depends
+from document_repository import DocumentRepository
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +299,11 @@ async def upload_pdf(
 
         result = ingest_pdf_file(file.file, file.filename, str(user.id))
 
+        document_repository = DocumentRepository()
+        document_repository.save_document(
+            filename=file.filename, doc_id=result["document"]["doc_id"], user_id=user.id
+        )
+
         logger.info(
             f"Request ID: {request_id} - endpoint = /upload-pdf stage = processing_done "
             f"user_id: {user.id} filename: {file.filename} "
@@ -324,6 +333,71 @@ async def upload_pdf(
     except Exception as error:
         logger.exception(
             f"Request ID: {request_id} - endpoint = /upload-pdf stage = unexpected_error"
+        )
+        raise HTTPException(status_code=500, detail=str(error))
+
+
+@router.get("/documents", response_model=DocumentListResponse, tags=["Documents"])
+def list_documents(http_request: Request, user: User = Depends(current_active_user)):
+    request_id = http_request.state.request_id
+
+    try:
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /documents stage = list_start user_id: {user.id}"
+        )
+
+        document_repository = DocumentRepository()
+        documents = document_repository.list_documents(user.id)
+
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /documents stage = list_done user_id: {user.id} count: {len(documents)}"
+        )
+
+        return {"total": len(documents), "documents": documents}
+
+    except Exception as error:
+        logger.exception(
+            f"Request ID: {request_id} - endpoint = /documents stage = unexpected_error"
+        )
+        raise HTTPException(status_code=500, detail=str(error))
+
+
+@router.delete(
+    "/documents/{doc_id}", response_model=DocumentDeleteResponse, tags=["Documents"]
+)
+def delete_document(
+    doc_id: str, http_request: Request, user: User = Depends(current_active_user)
+):
+    request_id = http_request.state.request_id
+
+    try:
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /documents/{doc_id} stage = delete_start user_id: {user.id}"
+        )
+
+        document_repository = DocumentRepository()
+        found = document_repository.delete_document(doc_id, user.id)
+
+        if not found:
+            logger.warning(
+                f"Request ID: {request_id} - endpoint = /documents/{doc_id} stage = not_found user_id: {user.id}"
+            )
+            raise HTTPException(status_code=404, detail="Document not found.")
+
+        delete_chunks_by_doc_id(doc_id, str(user.id))
+
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /documents/{doc_id} stage = delete_done user_id: {user.id}"
+        )
+
+        return {"message": "Document deleted successfully", "doc_id": doc_id}
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        logger.exception(
+            f"Request ID: {request_id} - endpoint = /documents/{doc_id} stage = unexpected_error"
         )
         raise HTTPException(status_code=500, detail=str(error))
 
