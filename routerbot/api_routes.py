@@ -13,9 +13,10 @@ from schemas import (
 )
 from dependencies import get_memory, build_chat_service
 from feedback_manager import FeedbackManager
-from pdf_ingestion import ingest_pdf_file
-from qdrant_store import delete_chunks_by_doc_id
-from auth import current_active_user
+from pdf_ingestion import prepare_pdf_chunks
+from qdrant_store import upsert_chunks, delete_chunks_by_doc_id
+from qdrant_reconcile import reconcile_orphan_vectors
+from auth import current_active_user, fastapi_users
 from models import User
 from fastapi import Depends
 from document_repository import DocumentRepository
@@ -23,6 +24,8 @@ from document_repository import DocumentRepository
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+current_superuser = fastapi_users.current_user(active=True, superuser=True)
 
 
 @router.get("/", tags=["general"])
@@ -298,25 +301,43 @@ async def upload_pdf(
 
         file.file.seek(0)
 
-        result = ingest_pdf_file(file.file, file.filename, str(user.id))
+        result = prepare_pdf_chunks(file.file, file.filename)
+        doc_id = result["document"]["doc_id"]
 
         document_repository = DocumentRepository()
         document_repository.save_document(
-            filename=file.filename, doc_id=result["document"]["doc_id"], user_id=user.id
+            filename=file.filename, doc_id=doc_id, user_id=user.id
         )
+
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /upload-pdf stage = postgres_saved "
+            f"user_id: {user.id} doc_id: {doc_id}"
+        )
+
+        try:
+            upsert_result = upsert_chunks(result["chunks"], str(user.id))
+        except Exception as qdrant_error:
+            document_repository.delete_document(doc_id, user.id)
+            logger.exception(
+                f"Request ID: {request_id} - endpoint = /upload-pdf stage = qdrant_upsert_failed_rolled_back "
+                f"user_id: {user.id} doc_id: {doc_id}"
+            )
+            raise HTTPException(
+                status_code=500, detail="Failed to store document vectors."
+            ) from qdrant_error
 
         logger.info(
             f"Request ID: {request_id} - endpoint = /upload-pdf stage = processing_done "
             f"user_id: {user.id} filename: {file.filename} "
             f"total_characters: {result['total_characters']} "
             f"total_chunks: {result['total_chunks']} "
-            f"added_chunks: {result['added_chunks']}"
+            f"added_chunks: {upsert_result['added_chunks']}"
         )
 
         return {
             "message": "PDF uploaded and processed successfully",
             "filename": file.filename,
-            "document_id": result["document"]["doc_id"],
+            "document_id": doc_id,
             "total_characters": result["total_characters"],
             "total_chunks": result["total_chunks"],
             "chunks": result["chunks"],
@@ -465,4 +486,35 @@ def get_chat_logs(http_request: Request):
 
     except Exception as error:
         logger.exception("[request_id=%s] Error fetching chat logs", request_id)
+        raise HTTPException(status_code=500, detail=str(error))
+
+
+@router.post("/admin/reconcile-vectors", tags=["Admin"])
+def reconcile_vectors(
+    http_request: Request,
+    dry_run: bool = True,
+    user: User = Depends(current_superuser),
+):
+    request_id = http_request.state.request_id
+
+    try:
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /admin/reconcile-vectors stage = start "
+            f"user_id: {user.id} dry_run: {dry_run}"
+        )
+
+        summary = reconcile_orphan_vectors(dry_run=dry_run)
+
+        logger.info(
+            f"Request ID: {request_id} - endpoint = /admin/reconcile-vectors stage = done "
+            f"user_id: {user.id} dry_run: {dry_run} "
+            f"orphans_found: {summary['orphans_found']} deleted: {summary['deleted']}"
+        )
+
+        return summary
+
+    except Exception as error:
+        logger.exception(
+            f"Request ID: {request_id} - endpoint = /admin/reconcile-vectors stage = unexpected_error"
+        )
         raise HTTPException(status_code=500, detail=str(error))

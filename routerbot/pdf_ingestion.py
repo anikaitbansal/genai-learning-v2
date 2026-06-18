@@ -1,12 +1,11 @@
 import uuid
 from langchain_community.document_loaders import PyMuPDFLoader
 from build_knowledge_base import build_chunks_from_document
-from qdrant_store import upsert_chunks
 import tempfile
 import os
 
 
-def ingest_pdf_file(file, original_filename: str, user_id: str) -> dict:
+def prepare_pdf_chunks(file, original_filename: str) -> dict:
     pdf_bytes = file.read()
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -40,12 +39,9 @@ def ingest_pdf_file(file, original_filename: str, user_id: str) -> dict:
     if not chunks:
         raise ValueError("No chunks could be created from the uploaded PDF.")
 
-    upsert_result = upsert_chunks(chunks, user_id)
-
     return {
         "document": document,
         "chunks": chunks,
         "total_characters": len(extracted_text),
         "total_chunks": len(chunks),
-        "added_chunks": upsert_result["added_chunks"],
     }
