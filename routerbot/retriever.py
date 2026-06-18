@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 class QdrantRetriever(BaseRetriever):
     user_id: str
+    selected_doc_ids: list[str] | None = None
     top_k: int = RAG_TOP_K
 
     def _get_relevant_documents(
@@ -39,7 +40,9 @@ class QdrantRetriever(BaseRetriever):
             f"query_length: {len(query.strip())} top_k: {self.top_k}"
         )
 
-        chunks = retrieve_from_qdrant(query, self.user_id, self.top_k)
+        chunks = retrieve_from_qdrant(
+            query, self.user_id, self.top_k, self.selected_doc_ids
+        )
 
         documents = [
             Document(
@@ -76,10 +79,12 @@ def retrieve_as_dicts(
     ]
 
 
-def build_bm25_retriever(user_id: str) -> BM25Retriever:
+def build_bm25_retriever(
+    user_id: str, selected_doc_ids: list[str] | None = None
+) -> BM25Retriever:
     logger.info(f"bm25_stage = build_start user_id: {user_id}")
 
-    chunks = fetch_all_chunks_for_user(user_id)
+    chunks = fetch_all_chunks_for_user(user_id, selected_doc_ids)
 
     if not chunks:
         logger.warning(f"bm25_stage = build_empty_corpus user_id: {user_id}")
@@ -104,11 +109,15 @@ def build_bm25_retriever(user_id: str) -> BM25Retriever:
     return bm25_retriever
 
 
-def build_ensemble_retriever(user_id: str) -> EnsembleRetriever:
+def build_ensemble_retriever(
+    user_id: str, selected_doc_ids: list[str] | None = None
+) -> EnsembleRetriever:
     logger.info(f"ensemble_stage = build_start user_id: {user_id}")
 
-    bm25_retriever = build_bm25_retriever(user_id)
-    qdrant_retriever = QdrantRetriever(user_id=user_id)
+    bm25_retriever = build_bm25_retriever(user_id, selected_doc_ids)
+    qdrant_retriever = QdrantRetriever(
+        user_id=user_id, selected_doc_ids=selected_doc_ids
+    )
 
     ensemble_retriever = EnsembleRetriever(
         retrievers=[bm25_retriever, qdrant_retriever], weights=[0.5, 0.5]
@@ -128,10 +137,12 @@ MULTI_QUERY_PROMPT = PromptTemplate(
 )
 
 
-def build_hybrid_retriever(user_id: str) -> MultiQueryRetriever:
+def build_hybrid_retriever(
+    user_id: str, selected_doc_ids: list[str] | None = None
+) -> MultiQueryRetriever:
     logger.info(f"hybrid_stage = build_start user_id: {user_id}")
 
-    ensemble_retriever = build_ensemble_retriever(user_id)
+    ensemble_retriever = build_ensemble_retriever(user_id, selected_doc_ids)
 
     query_generation_llm = ChatGroq(
         model=MODEL_NAME,
@@ -153,10 +164,12 @@ def build_hybrid_retriever(user_id: str) -> MultiQueryRetriever:
     return hybrid_retriever
 
 
-def build_compression_retriever(user_id: str) -> ContextualCompressionRetriever:
+def build_compression_retriever(
+    user_id: str, selected_doc_ids: list[str] | None = None
+) -> ContextualCompressionRetriever:
     logger.info(f"compression_stage = build_start user_id: {user_id}")
 
-    base_retriever = build_hybrid_retriever(user_id)
+    base_retriever = build_hybrid_retriever(user_id, selected_doc_ids)
 
     reranker = CohereRerank(
         model=COHERE_RERANK_MODEL,

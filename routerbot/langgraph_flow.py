@@ -18,6 +18,7 @@ class GraphState(TypedDict):
     session_id: str
     user_id: UUID
     use_rag: bool
+    selected_doc_ids: list[str] | None
     retriever: Any
     intent: str
     retrieved_chunks: list[dict[str, Any]]

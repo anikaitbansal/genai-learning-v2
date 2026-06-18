@@ -15,9 +15,13 @@ def get_memory(session_id: str, user_id: UUID):
     return MemoryManager(session_id, user_id)
 
 
-def get_retriever(user_id: UUID) -> BaseRetriever:
-    return build_compression_retriever(str(user_id))
+def get_retriever(
+    user_id: UUID, selected_doc_ids: list[str] | None = None
+) -> BaseRetriever:
+    return build_compression_retriever(str(user_id), selected_doc_ids)
 
 
 def build_chat_service(memory, user_id: UUID):
-    return ChatService(memory, retriever=get_retriever(user_id), debug=debug_mode)
+    return ChatService(
+        memory, user_id=user_id, retriever_builder=get_retriever, debug=debug_mode
+    )

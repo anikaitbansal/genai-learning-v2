@@ -7,15 +7,23 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
-    def __init__(self, memory, retriever, debug=False):
+    def __init__(self, memory, user_id, retriever_builder, debug=False):
         self.memory = memory
         self.debug = debug
-        self.retriever = retriever
+        self.user_id = user_id
+        self.retriever_builder = retriever_builder
         self.chat_log_repository = ChatLogRepository()
         self.graph = build_langgraph_flow()
 
     def process_message(
-        self, message, session_id, request_id, user_id, use_rag=True, debug=False
+        self,
+        message,
+        session_id,
+        request_id,
+        user_id,
+        use_rag=True,
+        debug=False,
+        selected_doc_ids=None,
     ):
         cleaned_message = message.strip()
 
@@ -34,13 +42,15 @@ class ChatService:
         logger.info(
             f"[request_id={request_id}] flow=graph_start session_id={session_id}"
         )
+        retriever = self.retriever_builder(user_id, selected_doc_ids)
 
         initial_state = {
             "original_message": cleaned_message,
             "session_id": session_id,
             "user_id": user_id,
             "use_rag": use_rag,
-            "retriever": self.retriever,
+            "selected_doc_ids": selected_doc_ids,
+            "retriever": retriever,
             "intent": "",
             "retrieved_chunks": [],
             "rag_used": False,
