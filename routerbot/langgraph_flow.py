@@ -1,9 +1,12 @@
 import re
 import logging
+import os
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg import Connection
+from psycopg.rows import dict_row
 from uuid import UUID
 from typing import TypedDict, Any
 from langgraph.graph import StateGraph, END
-
 from retriever import retrieve_as_dicts
 from routing import classify_intent, intent_branch
 from response_evaluator import ResponseEvaluator
@@ -200,8 +203,25 @@ def route_after_evaluation(state: GraphState) -> str:
     return "prepare_retry"
 
 
+def build_checkpointer() -> PostgresSaver:
+    raw_url = os.environ.get("DATABASE_URL", "")
+    conn_url = raw_url.replace("postgresql+psycopg2://", "postgresql://")
+
+    connection = Connection.connect(  # type: ignore[call-overload]
+        conn_url,
+        autocommit=True,
+        prepare_threshold=0,
+        row_factory=dict_row,  # type: ignore
+    )
+    checkpointer = PostgresSaver(connection)  # type: ignore[arg-type]
+
+    logger.info("checkpointer_stage = postgres_saver_built")
+    return checkpointer
+
+
 def build_langgraph_flow():
     graph_builder = StateGraph(GraphState)
+    checkpointer = build_checkpointer()
 
     graph_builder.add_node("classify", classify_node)
     graph_builder.add_node("retrieve", retrieve_node)
@@ -222,4 +242,4 @@ def build_langgraph_flow():
         {"prepare_retry": "prepare_retry", "end": END},
     )
 
-    return graph_builder.compile()
+    return graph_builder.compile(checkpointer=checkpointer)

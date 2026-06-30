@@ -60,7 +60,10 @@ class ChatService:
             "retry_count": 0,
         }
 
-        final_state = self.graph.invoke(cast(GraphState, initial_state))
+        final_state = self.graph.invoke(
+            cast(GraphState, initial_state),
+            config={"configurable": {"thread_id": session_id}},
+        )
 
         intent = final_state["intent"]
         retrieved_chunks = final_state["retrieved_chunks"]
