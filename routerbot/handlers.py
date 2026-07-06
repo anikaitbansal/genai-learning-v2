@@ -1,12 +1,7 @@
-from uuid import UUID
 from config import MODEL_NAME
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import ConfigurableFieldSpec
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_memory_adapter import LangChainMemoryAdapter
 
 handler_llm = ChatGroq(model=MODEL_NAME, temperature=0.2)
 
@@ -45,62 +40,24 @@ def build_rag_prompt(base_prompt, retrieved_chunks):
     )
 
 
-def get_message_history(session_id: str, user_id: UUID) -> BaseChatMessageHistory:
-    return LangChainMemoryAdapter(session_id=session_id, user_id=user_id)
-
-
-HISTORY_FACTORY_CONFIG = [
-    ConfigurableFieldSpec(
-        id="session_id",
-        annotation=str,
-        name="Session ID",
-        description="Unique identifier for the chat session.",
-        default="",
-        is_shared=True,
-    ),
-    ConfigurableFieldSpec(
-        id="user_id",
-        annotation=UUID,
-        name="User ID",
-        description="Authenticated user owning the session.",
-        default=None,
-        is_shared=True,
-    ),
-]
-
-
-def build_chain_with_history(system_prompt_text: str):
+def build_plain_chain(system_prompt_text: str):
     prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", "{system_prompt}"),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{user_input}"),
-        ]
+        [("system", "{system_prompt}"), ("human", "{user_input}")]
     )
 
-    base_chain = prompt | handler_llm | output_parser
+    chain = prompt | handler_llm | output_parser
 
-    chain_with_history = RunnableWithMessageHistory(
-        base_chain,
-        get_message_history,
-        input_messages_key="user_input",
-        history_messages_key="history",
-        history_factory_config=HISTORY_FACTORY_CONFIG,
-    )
-
-    return chain_with_history
+    return chain
 
 
 CHAINS_BY_INTENT = {
-    intent: build_chain_with_history(system_prompt_text)
+    intent: build_plain_chain(system_prompt_text)
     for intent, system_prompt_text in SYSTEM_PROMPTS.items()
 }
 
 
 def generate_response(intent: str, inputs: dict):
     user_input = inputs["user_input"]
-    session_id = inputs["session_id"]
-    user_id = inputs["user_id"]
     retrieved_chunks = inputs.get("retrieved_chunks")
     retry_reason = inputs.get("retry_reason", "")
     retry_count = inputs.get("retry_count", 0)
@@ -123,13 +80,7 @@ def generate_response(intent: str, inputs: dict):
         {
             "system_prompt": final_system_prompt,
             "user_input": user_input,
-        },
-        config={
-            "configurable": {
-                "session_id": session_id,
-                "user_id": user_id,
-            }
-        },
+        }
     )
 
     return bot_response
